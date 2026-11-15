@@ -1,0 +1,65 @@
+# Builds, tests and packages RommDeck and RomM Sync, its background service
+# (tools/deck-ci.sh), in the image tools/deck-build.sh uses. Runs when the code
+# changes, by hand, and before every release (release.yml).
+#
+# The code is a copy of RommPS's (SOURCE.txt says of which commit) and arrives
+# from there by itself, so there's nothing here to lint or review: that happened
+# in https://github.com/s0liton/RommPS, which runs this same script on the same
+# copy before it lets a change in.
+#
+# The packages end up as the artifact "steamdeck"; this workflow never touches
+# a release.
+name: Build
+
+on:
+  push:
+    branches: [main]
+    # This repository's own files: nothing in them is compiled.
+    paths-ignore: ["README.md", "assets/**", ".github/**"]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        description: "Version baked in and in the file names: v1.5.0 (the v is dropped)"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # The image tools/deck-build.sh runs, so the one built below is the one it finds.
+      - name: The build image
+        id: image
+        run: |
+          image=$(sed -n 's/^IMAGE="${DECK_IMAGE:-\(.*\)}"$/\1/p' tools/deck-build.sh)
+          [ -n "$image" ] || { echo "::error::tools/deck-build.sh names no image"; exit 1; }
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      # The cache only saves time, so failing to write it must not fail the build.
+      - uses: docker/build-push-action@v6
+        with:
+          context: platform/steamdeck/app/docker
+          tags: ${{ steps.image.outputs.image }}
+          load: true
+          cache-from: type=gha,scope=steamdeck
+          cache-to: type=gha,mode=max,scope=steamdeck,ignore-error=true
+
+      - name: Build, test and package
+        env:
+          VERSION: ${{ inputs.version || 'ci' }}
+        run: tools/deck-ci.sh "$VERSION"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: steamdeck
+          path: build/steamdeck/release/
+          if-no-files-found: error

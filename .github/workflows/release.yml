@@ -1,0 +1,95 @@
+# Builds RommDeck from a version tag, signs it and publishes it as a release.
+#
+# Nobody tags by hand here. RommPS's rommdeck-copy.yml pushes the tag vX.Y.Z,
+# on the copy of the commit being released, when a RommDeck release is merged
+# over there: https://github.com/s0liton/RommPS/blob/main/.github/workflows/rommdeck-copy.yml
+#
+# Release notes are docs/releases/rommdeck/vX.Y.Z.md, which came with the copy.
+#
+# If a run fails for no good reason, rerun it. If the code needs fixing, fix it
+# in RommPS, delete the tag here (git push --delete origin vX.Y.Z) and release
+# again from there.
+#
+# Needs one secret:
+#   RELEASE_SIGNING_KEY  the same key RommPS's releases use; the service checks
+#                        it before it installs an update
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  # Fail in seconds, not after the build.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the key, the notes and the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [ -z "$RELEASE_SIGNING_KEY" ]; then
+            echo "::error::RELEASE_SIGNING_KEY secret is not set; in-app updates need a signed release."
+            exit 1
+          fi
+          if [ ! -s "docs/releases/rommdeck/$TAG.md" ]; then
+            echo "::error::docs/releases/rommdeck/$TAG.md is missing; the release notes are written in RommPS"
+            exit 1
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::RommDeck $TAG is already out."
+            exit 1
+          fi
+
+  build:
+    needs: check
+    uses: ./.github/workflows/build.yml
+    with:
+      version: ${{ github.ref_name }}
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: steamdeck
+          path: dist
+
+      # The service's manifest and signature, as the PS5 payload has
+      # (src/update.c); the service won't install an update without them.
+      - name: Sign
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          make tools
+          build/host/release-sign manifest "$TAG" dist/romm-sync-steamdeck > dist/manifest-steamdeck.json
+          build/host/release-sign sign dist/manifest-steamdeck.json > dist/manifest-steamdeck.sig
+          build/host/release-sign check dist/manifest-steamdeck.json dist/manifest-steamdeck.sig
+
+      # Every file is uploaded before the release goes public, so nobody sees
+      # half of one.
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${TAG#v}"
+          for file in "rommdeck-$V-x86_64.tar.gz" "RommDeck-$V-x86_64.AppImage" "RommDeck-$V-x86_64.AppImage.zsync" \
+                      RommDeck-Installer.desktop rommdeck-installer.sh \
+                      romm-sync-steamdeck manifest-steamdeck.json manifest-steamdeck.sig; do
+            [ -s "dist/$file" ] || { echo "::error::dist/$file is missing"; exit 1; }
+          done
+          (cd dist && sha256sum * > SHA256SUMS)
+          gh release create "$TAG" dist/* --verify-tag \
+            --title "RommDeck $V" --notes-file "docs/releases/rommdeck/$TAG.md"
