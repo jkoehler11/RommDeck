@@ -119,8 +119,10 @@ static void system_core(const char *sys, const char *profile, char *out, size_t 
         const cJSON *platforms = cJSON_GetObjectItemCaseSensitive(p, "platforms");
         cJSON_ArrayForEach(pl, platforms) {
             if (strcmp(jget_str(pl, "dir", ""), sys)) continue;
-            const char *core = jget_str(pl, "core_name", "");
-            if (!core[0]) core = jget_str(pl, "emulator", "");
+            /* The emulator id is the core's file name (mesen); core_name is
+             * what the setup shows a person (Mesen). */
+            const char *core = jget_str(pl, "emulator", "");
+            if (!core[0]) core = jget_str(pl, "core_name", "");
             /* "retroarch" is the launcher, not a core: it means the setup never
              * named one. */
             if (strcasecmp(core, "retroarch")) str_copy(out, outlen, core);
