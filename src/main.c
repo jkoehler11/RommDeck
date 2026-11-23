@@ -14,6 +14,7 @@
 #include "config.h"
 #include "events.h"
 #include "covers.h"
+#include "deeplink.h"
 #include "detect.h"
 #include "http.h"
 #include "library.h"
@@ -305,7 +306,12 @@ static void *app_main(void *arg) {
     return NULL;
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+    /* The OS hands a rommdeck:// URL over when someone presses a plugin's
+     * button, and a copy already running gets it over the API instead. Reading
+     * it here means the UI can open that game as soon as it loads. */
+    for (int i = 1; i < argc; i++) deeplink_parse(argv[i]);
+
     /* GoldHEN runs payloads on its loader's thread, which can't take another
      * payload until main() returns, so there the app gets its own thread. */
     if (plat_info()->detach && thread_start(app_main, NULL) == 0) return 0;
