@@ -1629,13 +1629,30 @@ function focusRom(id, tries) {
     // The game's own button, as if it had been pressed: a game that isn't here
     // starts downloading, one that is starts playing. Never Remove, which is
     // the other thing a card can offer.
-    var b = el.querySelector("button[data-play]") || el.querySelector("button[data-dl]");
-    if (b) { b.focus({ preventScroll: true }); b.click(); return; }
+    var play = el.querySelector("button[data-play]");
+    if (play) { play.focus({ preventScroll: true }); play.click(); return; }
+    var dl = el.querySelector("button[data-dl]");
+    if (dl) {
+      // Not here yet: take the download and play it when it lands, which is
+      // what the button in RomM promised.
+      dl.focus({ preventScroll: true });
+      dl.click();
+      playWhenHere(id, 0);
+      return;
+    }
     var other = el.querySelector("button");
     if (other) other.focus({ preventScroll: true });
     return;
   }
   if ((tries || 0) < 30) setTimeout(function () { focusRom(id, (tries || 0) + 1); }, 400);
+}
+// A download from a deep link plays as soon as the game is on the machine.
+// Five minutes is generous for a cartridge and short enough to give up on.
+function playWhenHere(id, tries) {
+  if ((tries || 0) > 100) return;
+  var btn = document.querySelector('button[data-play="' + id + '"]');
+  if (btn) { btn.focus({ preventScroll: true }); btn.click(); return; }
+  setTimeout(function () { playWhenHere(id, (tries || 0) + 1); }, 3000);
 }
 function openDeepLink(d) {
   if (!d || !d.rom) return;
