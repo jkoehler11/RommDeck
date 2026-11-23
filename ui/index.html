@@ -17,6 +17,15 @@ var HERE = document.documentElement.getAttribute("data-here") || "console";
 var PEERS = document.documentElement.getAttribute("data-peers") || "consoles";
 var CONSOLE = !document.documentElement.getAttribute("data-here");
 document.title = APP;
+// The header is the product's, not the console front-end's: RommPS on a
+// PlayStation, RommDeck here. The suffix keeps its own styling. Deferred,
+// since this runs in <head> and the header doesn't exist yet.
+document.addEventListener("DOMContentLoaded", function () {
+  var h1 = document.querySelector("header h1");
+  if (!h1 || !APP) return;
+  var tail = APP.replace(/^Romm/, "");
+  h1.innerHTML = "Romm" + (tail ? "<span>" + tail + "</span>" : "");
+});
 </script>
 <style>
 <!--INCLUDE:build/gen/inter-font.css-->
