@@ -821,4 +821,43 @@ twosyncs
 [[ "$(fwrecs "$REG")" == "$NCA1.nca/00 $NCA3.nca/00 $NCA2.nca/00 " && $(($(fwhits) - before)) -eq 1 ]] \
   || fail "once it comes down, only the NCA missing: $(fwrecs "$REG"), $(($(fwhits) - before)) downloads"
 
+echo "22. play: the launcher EmuDeck made, with the game's file"
+# The launchers EmuDeck writes: they take the ROM path and nothing else. These
+# record what they were handed instead of starting an emulator.
+# EmuDeck's own home is the one the service ends up managing (scenario 18), so
+# the launchers go beside the games it has there.
+LAUNCH="$YM/tools/launchers"
+mkdir -p "$LAUNCH"
+# One per launcher the setup could have picked: the fixture's choice of emulator
+# per system is its own business, the contract is that the game's file reaches
+# the launcher for it.
+for e in retroarch duckstation pcsx2-qt melonds dolphin-emu; do
+    printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "%s/%s.args"\n' "$T" "$e" > "$LAUNCH/$e.sh"
+    chmod +x "$LAUNCH/$e.sh"
+done
+echo "   play 11: $(curl -s -X POST "$API/api/play" -d '{"rom_id":11}' -w ' %{http_code}')"
+wait_file "$T/retroarch.args"
+mapfile -t got < "$T/retroarch.args"
+# The file is the last argument, with "-L <core>" ahead of it only when the
+# setup names a core for the system: a core RommDeck invents would be worse
+# than none.
+[[ "${got[-1]}" == "$SD/roms/snes/Super Metroid (USA).sfc" ]] || fail "RetroArch got: ${got[*]}"
+if [[ "${got[0]}" == "-L" ]]; then
+    [[ "${got[1]}" != "retroarch" && -n "${got[1]}" ]] || fail "RetroArch was given '${got[1]}' as a core"
+fi
+echo "   play 20: $(curl -s -X POST "$API/api/play" -d '{"rom_id":20}' -w ' %{http_code}')"
+hit=$(for f in "$T"/*.args; do grep -l "Okami.iso" "$f" 2>/dev/null || true; done | head -1)
+[[ -n "$hit" ]] || fail "no launcher was handed Okami: $(ls "$T"/*.args 2>/dev/null)"
+[[ "$(tail -1 "$hit")" == "$SD/roms/ps2/Okami.iso" ]] || fail "$hit got: $(cat "$hit")"
+code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API/api/play" -d '{"rom_id":9999}')
+[[ "$code" == "409" ]] || fail "playing a game that isn't here answered $code"
+curl -sf -X POST "$API/api/play" -d '{"rom_id":0}' >/dev/null 2>&1 && fail "a play with no game was accepted"
+
+echo "23. deep link: taken once, and pressed nowhere else"
+post /api/deeplink '{"rom":11,"name":"Super Metroid","platform":"snes"}' >/dev/null
+first=$(curl -sf "$API/api/deeplink")
+[[ "$first" == *'"rom":11'* && "$first" == *'"platform":"snes"'* ]] || fail "the target didn't come back: $first"
+second=$(curl -sf "$API/api/deeplink")
+[[ "$second" == *'"rom":0'* ]] || fail "the target came back twice: $second"
+
 echo "PASS"

@@ -12,42 +12,77 @@
 
 extern char **environ;
 
-/* EmuDeck names a few launchers differently from the emulator id RommDeck
- * stores, and a profile id can carry how it was installed. A RetroArch core's
- * launcher is always retroarch.sh; the core goes on the command line. */
+/* Launcher names by the emulator a profile id mentions. Ids are decorated:
+ * RetroDECK's RetroArch is "retroarch-retroarch", EmuDeck's "retroarch-flatpak",
+ * a core-based system "retroarch-snes9x" — all one launcher, retroarch.sh. And
+ * a few launchers are named differently from the emulator (dolphin-emu.sh). */
 static const struct {
-    const char *profile;
+    const char *mentions;
     const char *launcher;
-} ALIASES[] = {
+} NAMES[] = {
+    {"retroarch", "retroarch"},
+    {"duckstation", "duckstation"},
     {"dolphin", "dolphin-emu"},
     {"pcsx2", "pcsx2-qt"},
+    {"melonds", "melonds"},
+    {"mgba", "mgba"},
+    {"flycast", "flycast"},
+    {"cemu", "cemu"},
+    {"azahar", "azahar"},
+    {"lime3ds", "lime3ds"},
+    {"citra", "citra"},
+    {"ppsspp", "ppsspp"},
+    {"rpcs3", "rpcs3"},
+    {"xemu", "xemu"},
+    {"mame", "mame"},
+    {"supermodel", "supermodel"},
+    {"model2", "model2"},
     {"xenia", "xenia-emu"},
-    {"retroarch-flatpak", "retroarch"},
-    {"retroarch-native", "retroarch"},
-    {"mesen", "retroarch"},
-    {"snes9x", "retroarch"},
-    {"mgba", "retroarch"},
-    {"gambatte", "retroarch"},
-    {"genesis_plus_gx", "retroarch"},
-    {"picodrive", "retroarch"},
+    {"bigpemu", "bigpemu"},
+    {"scummvm", "scummvm"},
+    {"vita3k", "vita3k"},
+    {"shadps4", "shadps4"},
+    {"ryujinx", "ryujinx"},
+    {"ares", "ares"},
+    {"rmg", "rmg"},
 };
 
-void play_launcher_dir(char *out, size_t outlen) {
+/* EmuDeck keeps its launchers beside the games folder it manages: a game at
+ * <root>/roms/<system>/<file> means <root>/tools/launchers. Asking the game
+ * that is about to be played keeps a second EmuDeck (a card, another user)
+ * working without a setting to point at it. */
+static void launcher_dir_for(const char *game, char *out, size_t outlen) {
     const char *env = getenv("ROMM_PLAY_LAUNCHERS");
     if (env && env[0]) {
         str_copy(out, outlen, env);
         return;
     }
+    if (game && game[0]) {
+        char dir[1200];
+        str_copy(dir, sizeof dir, game);
+        for (int cuts = 0; cuts < 2; cuts++) {
+            char *slash = strrchr(dir, '/');
+            if (!slash || slash == dir) break;
+            *slash = 0;
+        }
+        snprintf(out, outlen, "%s/../tools/launchers", dir);
+        if (dir_exists(out)) return;
+    }
     const char *home = getenv("HOME");
     snprintf(out, outlen, "%s/Emulation/tools/launchers", home ? home : ".");
 }
 
-/* The launcher's name for a profile id. */
+void play_launcher_dir(char *out, size_t outlen) {
+    launcher_dir_for(NULL, out, outlen);
+}
+
+/* The launcher's name for a profile id, "" when nothing in it is an emulator we
+ * know how to start: a made-up name would only fail at posix_spawn. */
 static const char *launcher_name(const char *profile) {
     if (!profile || !profile[0]) return "";
-    for (size_t i = 0; i < sizeof ALIASES / sizeof ALIASES[0]; i++)
-        if (!strcmp(profile, ALIASES[i].profile)) return ALIASES[i].launcher;
-    return profile;
+    for (size_t i = 0; i < sizeof NAMES / sizeof NAMES[0]; i++)
+        if (strcasestr(profile, NAMES[i].mentions)) return NAMES[i].launcher;
+    return "";
 }
 
 /* The game as the state keeps it: its file, the profile it came down for and
@@ -84,7 +119,11 @@ static void system_core(const char *sys, const char *profile, char *out, size_t 
         const cJSON *platforms = cJSON_GetObjectItemCaseSensitive(p, "platforms");
         cJSON_ArrayForEach(pl, platforms) {
             if (strcmp(jget_str(pl, "dir", ""), sys)) continue;
-            str_copy(out, outlen, jget_str(pl, "emulator", ""));
+            const char *core = jget_str(pl, "core_name", "");
+            if (!core[0]) core = jget_str(pl, "emulator", "");
+            /* "retroarch" is the launcher, not a core: it means the setup never
+             * named one. */
+            if (strcasecmp(core, "retroarch")) str_copy(out, outlen, core);
             break;
         }
         if (out[0]) break;
@@ -98,7 +137,7 @@ void play_launcher_for(int rom_id, char *out, size_t outlen) {
     if (!game_entry(rom_id, file, sizeof file, profile, sizeof profile, sys, sizeof sys)) return;
     const char *name = launcher_name(profile);
     if (!name[0]) return;
-    play_launcher_dir(dir, sizeof dir);
+    launcher_dir_for(file, dir, sizeof dir);
     snprintf(out, outlen, "%s/%s.sh", dir, name);
 }
 
@@ -116,7 +155,7 @@ int play_launch(int rom_id, char *err, size_t errlen) {
         return -1;
     }
 
-    play_launcher_dir(dir, sizeof dir);
+    launcher_dir_for(file, dir, sizeof dir);
     snprintf(script, sizeof script, "%s/%s.sh", dir, name);
     if (!file_exists(script)) {
         /* EmuDeck writes a launcher for the emulators it installed: a missing
