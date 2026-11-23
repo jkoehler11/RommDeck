@@ -1609,22 +1609,20 @@ function padLoop() {
 }
 requestAnimationFrame(padLoop);
 
-// A plugin hands over one game: open its platform, scroll to its row and mark
-// it, so a press lands on the game rather than the library's front page.
+// A plugin hands over one game: open its platform, find its row and press its
+// button, so a press lands on the game rather than the library's front page.
 function focusRom(id, tries) {
-  if (!focusRom.styled) {
-    focusRom.styled = 1;
-    var st = document.createElement("style");
-    st.textContent = ".rom.target,.romtable tr.target{outline:2px solid var(--ok,#59d18c);outline-offset:4px;border-radius:12px}";
-    document.head.appendChild(st);
-  }
   var el = document.querySelector('[data-rom="' + id + '"]');
   if (el) {
     el.scrollIntoView({ block: "center" });
-    el.classList.add("target");
-    var b = el.querySelector("button");
-    if (b) b.focus({ preventScroll: true });
-    setTimeout(function () { el.classList.remove("target"); }, 6000);
+    // The game's own button, as if it had been pressed: hand over a game that
+    // isn't here and the download starts. Only the download: a card that is
+    // already here offers History and Remove, and neither is what a plugin's
+    // button asked for.
+    var b = el.querySelector("button[data-dl]");
+    if (b) { b.focus({ preventScroll: true }); b.click(); return; }
+    var other = el.querySelector("button");
+    if (other) other.focus({ preventScroll: true });
     return;
   }
   if ((tries || 0) < 30) setTimeout(function () { focusRom(id, (tries || 0) + 1); }, 400);
