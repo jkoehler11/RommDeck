@@ -1108,7 +1108,7 @@ function romButton(g) {
   if (!platformOf(g).profile) return "";
   var j = romJob(g);
   if (j) return "<button disabled>" + jobLabel(j) + "</button>";
-  if (g.installed) return '<button class="icon" data-hist="' + g.id + '" title="History" aria-label="History">' + CLOCK_ICON + '</button> <button class="danger" data-del="' + g.id + '">Remove</button>';
+  if (g.installed) return '<button class="primary" data-play="' + g.id + '">Play</button> <button class="icon" data-hist="' + g.id + '" title="History" aria-label="History">' + CLOCK_ICON + '</button> <button class="danger" data-del="' + g.id + '">Remove</button>';
   if (g.archived) return '<button data-archived="' + g.id + '">Archived</button>';
   return '<button class="primary" data-dl="' + g.id + '" data-name="' + esc(g.name || "") + '" data-cover="' + esc(g.cover || "") + '">Download</button>';
 }
@@ -1224,6 +1224,7 @@ $("roms").onclick = function (ev) {
   if (b.dataset.dl) api("POST", "/api/download", { rom_id: +b.dataset.dl, name: b.dataset.name || "", cover: b.dataset.cover || "" }).then(function () { b.disabled = true; b.textContent = "Queued"; pollLibraryDownloads(); }).catch(function (e) {
     if (/archived/i.test(e.message)) notice("Can't download", e.message); else toast(e.message, 1);
   });
+  if (b.dataset.play) playRom(b.dataset.play, b);
   if (b.dataset.archived) notice("Can't download", ARCHIVED);
   if (b.dataset.hist) showHistory(+b.dataset.hist);
   if (b.dataset.del && confirm("Remove this game from the " + HERE + "? Its saves are kept.")) api("POST", "/api/delete", { rom_id: +b.dataset.del }).then(function () { toast("Removed"); loadRoms(); }).catch(function (e) { toast(e.message, 1); });
@@ -1307,6 +1308,16 @@ function loadTracked() {
   }).catch(function () {});
 }
 
+// Play: the emulator EmuDeck installed for this system, started with the game.
+function playRom(id, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = "Starting"; }
+  api("POST", "/api/play", { rom_id: +id }).then(function () {
+    toast("Starting");
+  }).catch(function (e) {
+    toast(e.message, 1);
+    if (btn) { btn.disabled = false; btn.textContent = "Play"; }
+  });
+}
 function pollLibraryDownloads() { api("GET", "/api/downloads").then(syncLibraryDownloads).catch(function () {}); }
 
 // Downloads
@@ -1615,11 +1626,10 @@ function focusRom(id, tries) {
   var el = document.querySelector('[data-rom="' + id + '"]');
   if (el) {
     el.scrollIntoView({ block: "center" });
-    // The game's own button, as if it had been pressed: hand over a game that
-    // isn't here and the download starts. Only the download: a card that is
-    // already here offers History and Remove, and neither is what a plugin's
-    // button asked for.
-    var b = el.querySelector("button[data-dl]");
+    // The game's own button, as if it had been pressed: a game that isn't here
+    // starts downloading, one that is starts playing. Never Remove, which is
+    // the other thing a card can offer.
+    var b = el.querySelector("button[data-play]") || el.querySelector("button[data-dl]");
     if (b) { b.focus({ preventScroll: true }); b.click(); return; }
     var other = el.querySelector("button");
     if (other) other.focus({ preventScroll: true });

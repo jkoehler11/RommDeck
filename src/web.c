@@ -1,4 +1,5 @@
 #include "deeplink.h"
+#include "play.h"
 #include "web.h"
 
 #include <arpa/inet.h>
@@ -1453,6 +1454,24 @@ static void route(request *r) {
         cJSON_AddStringToObject(o, "name", name);
         cJSON_AddStringToObject(o, "platform", platform);
         send_json(fd, 200, o);
+        return;
+    }
+    if (is_post && !strcmp(r->path, "/api/play")) {
+        /* Start the game on this machine. The download is the caller's to
+         * arrange: this only starts what is already here. */
+        cJSON *j = body_json(r);
+        int rom = (int)jget_num(j, "rom_id", 0);
+        cJSON_Delete(j);
+        char err[256] = "";
+        if (rom <= 0) {
+            send_error(fd, 400, "rom_id is required");
+            return;
+        }
+        if (play_launch(rom, err, sizeof err) != 0) {
+            send_error(fd, 409, err);
+            return;
+        }
+        send_json(fd, 200, cJSON_CreateObject());
         return;
     }
     if (is_post && !strcmp(r->path, "/api/deeplink")) {
